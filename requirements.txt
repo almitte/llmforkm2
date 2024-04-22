@@ -8,6 +8,5 @@ openai==1.23.1
 pinecone-client==3.2.2
 python-dotenv==1.0.1
 scikit-learn==1.4.2
-watchdog==4.0.0
 streamlit==1.33.0
 

@@ -1,0 +1,48 @@
+@startuml
+title Lösung des Confluence Problems mit LLM
+
+hide footbox
+autonumber
+
+actor Nutzer as U
+participant "Front-End" as FE
+participant "Python-Server" as PS
+participant "Datenbank" as DB
+participant "Confluence" as C
+participant "LLM" as LLM
+
+U -> FE: Nutzer-Anfrage stellen
+activate FE
+FE -> PS: **GET:** Nutzer-Anfrage senden
+activate PS
+PS -> DB: **GET:** Gespeichertes Vektor-Modell der Confluence-Seiten
+activate DB
+DB --> PS: **OK**(Vektor-Modell)
+deactivate DB
+
+|||
+
+group opt [Vektor-Modell älter als 1 Stunde]
+    PS -> C: **GET:** Confluence-Seiten
+    activate C
+    C --> PS: **OK**(Confluence-Seiten)
+    deactivate C
+    PS -> DB: **POST:** Aktualisierung Vektor-Modell
+    activate DB
+    DB --> PS: **OK**
+    deactivate DB
+end
+
+|||
+
+PS -> LLM: **GET:** Prompt mit Nutzer-Anfrage
+activate LLM
+LLM --> PS: **OK**(Zusammenfassung mit Verlinkung)
+deactivate LLM
+
+PS --> FE: **OK**(Zusammenfassung mit Verlinkung)
+deactivate PS
+FE --> U: Zusammenfassung mit Verlinkung
+deactivate FE
+
+@enduml

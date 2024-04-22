@@ -20,7 +20,7 @@ PINECONE_API_KEY = [ENTER YOUR PINECONE API KEY HERE]
 PINECONE_API_ENV = [ENTER YOUR PINECONE API ENVIRONMENT HERE]
 ```
 
-3. Run the interface 
+3. Run the website locally in your browser 
 
 ```zsh
 streamlit run interface.py

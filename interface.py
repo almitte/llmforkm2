@@ -40,9 +40,14 @@ if prompt :
     with st.chat_message("user"):
         st.markdown(prompt)
     # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})         
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    history = ""
+    for message in st.session_state.messages:
+        m = f"{message["role"]}: {message["content"]}"   
+        history += m + "\n"
 
-    response = rag.generate_response(prompt)
+    response = rag.generate_response(prompt, history)
     
     # Display assistant response in chat message container
     with st.chat_message("assistant"):

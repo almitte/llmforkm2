@@ -1,0 +1,45 @@
+@startuml
+
+title Nutzer-Anfrage bearbeiten
+
+start
+repeat 
+:Nutzer gibt Anfrage und Optionen ein;
+:Nutzer-Anfrage stellen;
+repeat while (Nutzer-Anfrage gültig?) is (nein) not (ja)
+
+#palegreen:OK;
+:Nutzer-Anfrage an Python-Server weiterleiten;
+
+repeat
+:Laden der Vektor-Datenbank;
+repeat while (Vektor-Datenbank erhalten?) is (nein) not (ja)
+#palegreen:OK;
+
+if (Vektor-Datenbank älter als 1 Stunde?) then (ja)
+repeat
+:Confluence-Seiten über API laden;
+repeat while (Confluence-Seiten erhalten?) is (nein) not (ja)
+#palegreen:OK;
+:Vektor-Datenbank aus Confluence-Seiten erzeugen;
+:Vektor-Bank in Datenbank speichern;
+else (nein)
+endif
+
+:Relevante Seiten für Nutzer-Anfrage ermitteln;
+if (Existieren relevante Seiten zur Nutzer-Anfrage?) then (ja)
+:Prompt mit Nutzer-Anfrage und Vektor-Datenbank erzeugen;
+
+repeat 
+:Prompt an LLM senden;
+repeat while (Antwort von LLM erhalten?) is (nein) not (ja)
+#palegreen: OK;
+:Antwort auf Nutzer-Anfrage anzeigen;
+else (nein)
+#pink: Keine relevanten Seiten für Anfrage gefunden;
+kill
+endif
+
+stop
+
+@enduml

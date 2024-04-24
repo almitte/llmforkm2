@@ -23,7 +23,7 @@ PINECONE_API_ENV = [ENTER YOUR PINECONE API ENVIRONMENT HERE]
 3. Run the website locally in your browser 
 
 ```zsh
-streamlit run interface.py
+streamlit run ui.py
 ```
 
 Mac: Control + C to end

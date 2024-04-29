@@ -1,0 +1,26 @@
+credentials:
+  usernames:
+    alex:
+      email: alex@gmail.com
+      failed_login_attempts: 0
+      logged_in: False
+      name: Alex
+      password: alex 
+    konrad:
+      email: konrad@gmail.com
+      failed_login_attempts: 0
+      logged_in: False
+      name: Konrad
+      password: konrad
+    max:
+      email: rbriggmax@gmail.com
+      failed_login_attempts: 0
+      logged_in: False
+      name: Max
+      password: max
+cookie:
+  expiry_days: 1
+  key: "blabla" # Must be string
+  name: bla
+
+ 

@@ -7,8 +7,6 @@ from yaml.loader import SafeLoader
 # streamlit run interface.py
 
 
-
-
 with st.sidebar:
     with open('config.yaml') as file:
         config = yaml.load(file, Loader=SafeLoader)
@@ -27,6 +25,7 @@ with st.sidebar:
         st.error('Username/password is incorrect')
     elif st.session_state["authentication_status"] is None:
         st.warning('Please enter your username and password')
+        
     language = st.selectbox("Sprache:", ["deutsch", "englisch"])
     version = st.selectbox("Version:", ["gpt-3.5-turbo", "gpt-4","gpt-4-turbo"])
 
@@ -47,9 +46,8 @@ if st.session_state["authentication_status"]:
 
     if upgrade: 
         with st.status("Es dauert noch einen kleinen Moment"):    
-        # function die lange dauert 
         # update die Knowledge Base 
-            data.update_data()
+            rag.update_data()
             st.write("Daten wurden erfolgreich geupdated")
 
     if clear: 
@@ -94,15 +92,15 @@ if st.session_state["authentication_status"]:
             st.session_state.messages.append({"role": "user", "content": prompt})
         # Display assistant response in chat message container
         if st.session_state.messages[-1]["role"]!="assistant":
-            # nur die letzten 10 Nachrichten beachten
-        # history = st.session_state.messages[-10:]         
             # Antwort auf Basis des Verlaufs und des Prompts generieren
             with st.chat_message("assistant"):
                 # Tracing der run_id
                 from langchain.callbacks import collect_runs
                 with collect_runs() as cb:
+                    # nur die letzten 10 Nachrichten beachten
+                    history = st.session_state.messages[-10:-1]   
                     # Data wird gestreamt
-                    response = st.write_stream(rag.generate_response(prompt, st.session_state.messages[-10:]   , chain))
+                    response = st.write_stream(rag.generate_response(prompt, history, chain))
                     # run-id zum feedback senden
                     st.session_state.run_id=cb.traced_runs[0].id
             # Add assistant response to chat history  

@@ -12,6 +12,8 @@ streamlit==1.33.0
 requests==2.31.0
 watchdog==4.0.0
 streamlit-authenticator==0.3.2
+atlassian-python-api==3.41.11
+
 
 #pip show
 

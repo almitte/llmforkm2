@@ -128,13 +128,13 @@ if True: #st.session_state["authentication_status"]:
             #     for source in rag.relevant_sources:
             #         st.write(f"Source{i}: "  + source)
             #         i = i+1
-            i = 1
-            if len(rag.relevant_sources) == 0:
+            if response=="Ich weiß es nicht.":
                 st.write("Keine relevanten Seiten gefunden!")
-            for source_tupel in rag.relevant_sources:
-                print(source_tupel)
-                title, source = source_tupel
-                st.write(f"{title}: "  +  source)
+            else: 
+                for source_tupel in rag.relevant_sources:
+                    title, source = source_tupel
+                    st.write(f"{title}: "  +  source)
+            
                 
    
 

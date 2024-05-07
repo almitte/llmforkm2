@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from atlassian import Confluence
 from bs4 import BeautifulSoup
+import json
     
 # loop um mehr als nur 100 pages auf einmal zu bekommen
 def get_all_pages(confluence: Confluence, space_key: str, start: int = 0, limit: int = 100):
@@ -46,13 +47,14 @@ def get_data_confluence():
         username=username,
         password=CONFLUENCE_API_KEY
         )
-    # web scraper mir Rest-API
     pages = get_all_pages(confluence, space_key, start = 0, limit = 100)
+    pages_dic = {"pages": []}
     for page in pages:
-        print(page)
-        body = "ID" + page["id"] + ":\n\n" + page["title"] +  ":\n\n" + page["body"]["storage"]["value"]
+        body = page["title"] +  ":\n\n" + page["body"]["storage"]["value"]
         soup = BeautifulSoup(body, 'html.parser')
         text = soup.get_text(separator="")
-        file_path = f"Data/{page["id"]}_{page["title"]}.txt"
-        with open(file_path, 'w', encoding='utf-8') as file:
-            file.write(text)
+        pages_dic["pages"].append({"text": text, "p_id": page["id"], "p_title": page["title"], "p_parent": "not supported"})
+        
+    file_path = "Data/confluence_data.json"
+    with open(file_path, 'w', encoding='utf-8') as file:
+        json.dump(pages_dic, file, indent=4)

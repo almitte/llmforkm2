@@ -8,29 +8,29 @@ from yaml.loader import SafeLoader
 
 
 
-with st.sidebar:
-    with open('config.yaml') as file:
-        config = yaml.load(file, Loader=SafeLoader)
+# with st.sidebar:
+#     with open('config.yaml') as file:
+#         config = yaml.load(file, Loader=SafeLoader)
 
-    authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days'],
-    )
-    authenticator.login()
+#     authenticator = stauth.Authenticate(
+#     config['credentials'],
+#     config['cookie']['name'],
+#     config['cookie']['key'],
+#     config['cookie']['expiry_days'],
+#     )
+#     authenticator.login()
 
-    if st.session_state["authentication_status"]:
-        authenticator.logout()
-    elif st.session_state["authentication_status"] is False:
-        st.error('Username/password is incorrect')
-    elif st.session_state["authentication_status"] is None:
-        st.warning('Please enter your username and password')
+#     if st.session_state["authentication_status"]:
+#         authenticator.logout()
+#     elif st.session_state["authentication_status"] is False:
+#         st.error('Username/password is incorrect')
+#     elif st.session_state["authentication_status"] is None:
+#         st.warning('Please enter your username and password')
 
 side1, side2 = st.columns(2)
 
 # Chatbot nur anzeigen wenn eingeloggt
-if st.session_state["authentication_status"]:
+if True: #st.session_state["authentication_status"]:
     st.title("Knowledge Management Chat")
     st.write("Unsere Anwendung ermöglicht es dir, Confluence-Seiten in deinem Space automatisch zu extrahieren und dann mithilfe eines Language-Modeling-Modells (LLM) Fragen beantworten zu lassen. Darüber hinaus liefert sie relevante Seiten als Links zurück.")
     # Initialize chat history
@@ -44,8 +44,13 @@ if st.session_state["authentication_status"]:
     if upgrade: 
         with st.status("Es dauert noch einen kleinen Moment"):    
         # update die Knowledge Base 
-            rag.update_data()
-            st.write("Daten wurden erfolgreich geupdated")
+            st.write("loading new data")
+            data.get_data_confluence()
+            st.write("new data loaded from confluence")
+            st.write("upserting data to pinecone")
+            # upsert new data to pinecone
+            rag.get_pinecone_with_new_data()
+            st.write("vectorstore is updated")
 
     if clear: 
         st.session_state.messages = []
@@ -126,9 +131,11 @@ if st.session_state["authentication_status"]:
             i = 1
             if len(rag.relevant_sources) == 0:
                 st.write("Keine relevanten Seiten gefunden!")
-            for source in rag.relevant_sources:
-                st.write(f"Source{i}: "  + source)
-                i = i+1
+            for source_tupel in rag.relevant_sources:
+                print(source_tupel)
+                title, source = source_tupel
+                st.write(f"{title}: "  +  source)
+                
    
 
 

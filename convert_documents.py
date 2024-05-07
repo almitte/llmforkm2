@@ -1,11 +1,12 @@
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import DirectoryLoader
+from langchain_community.document_loaders import JSONLoader
 import os
 import shutil
 from langchain.schema import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain.vectorstores.chroma import Chroma
+from langchain_pinecone import PineconeVectorStore
 from dotenv import load_dotenv
 
 DATA_PATH = "Data"
@@ -14,14 +15,27 @@ CHROMA_PATH = "chroma"
 def main():
     ...
     #generate_data_store()
+    
+# Define the metadata extraction function.
+def metadata_func(record: dict, metadata: dict) -> dict:
 
-def load_documents():
+    metadata["p_title"] = record.get("p_title")
+    metadata["p_parent"] = record.get("p_parent")
+    metadata["p_id"] = record.get("p_id")
+
+    return metadata  
+  
+
+def load_documents(file):
     """
-    Loading documents from txt files from data path and returning documents    
+    Loading documents from json file from data path and returning documents    
     
     """
 
-    loader=DirectoryLoader(DATA_PATH, glob='**/*.txt')
+    loader=JSONLoader(file,
+                      jq_schema='.pages[]',
+                      content_key="text",
+                      metadata_func=metadata_func)
     documents = loader.load()
     return documents
 
@@ -48,13 +62,14 @@ def split_text(documents: list[Document]):
 
 def generate_data_store():
     """
-    Main entry point to generate data store by loading documents from storage, splitting them into chunks, and storing the chunks in a Chroma database.
+    Main entry point to generate data store by loading documents from storage, splitting them into chunks, and storing the chunks in a vectorstore.
     
     """
 
     documents = load_documents()
     chunks = split_text(documents)
     save_to_chroma(chunks)
+
 
 def save_to_chroma(chunks: list[Document]):
     """

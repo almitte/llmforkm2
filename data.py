@@ -2,9 +2,6 @@ import os
 from dotenv import load_dotenv
 from atlassian import Confluence
 from bs4 import BeautifulSoup
-
-
-        
     
 # loop um mehr als nur 100 pages auf einmal zu bekommen
 def get_all_pages(confluence, space):
@@ -47,6 +44,7 @@ def get_data_confluence():
     text = soup.get_text(separator="")
         
     # Saving the text to a .txt file
+    # better as json with metadata like page name, page id and maybe subpage id
     file_path = "confluence_data.txt"  # Define the path and file name
     with open(file_path, 'w', encoding='utf-8') as file:
         file.write(text)

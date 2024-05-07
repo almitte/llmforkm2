@@ -10,11 +10,10 @@ from langsmith import Client
 from langchain.callbacks import LangChainTracer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai.embeddings import OpenAIEmbeddings
-from langchain_core.runnables import RunnableParallel, RunnablePassthrough
 from langchain_pinecone import PineconeVectorStore
 import data 
 from langchain_community.document_loaders import TextLoader
-from pinecone import Pinecone
+from pinecone import Pinecone, ServerlessSpec
         
 # load .env Variablen 
 load_dotenv()
@@ -34,7 +33,8 @@ parser = StrOutputParser()
 embeddings = OpenAIEmbeddings()
 
 # Initialize vectorstore
-vectorstore = PineconeVectorStore(index_name="llm-km", embedding=embeddings)
+index_pinecone = "llm-km"
+vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embeddings)
 
 # template prompt
 template = """
@@ -51,9 +51,9 @@ prompt = ChatPromptTemplate.from_messages([
     ])        
 
 
-def initialize_chain(name):
+def initialize_chain():
     
-    model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model=name)
+    model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo")
 
     chain = prompt | model | parser 
     return chain
@@ -70,7 +70,6 @@ def generate_response(message, history_list, chain):
     return chain.stream({
         "history": history, 
         "question": message,
-        # Document datei 
         "context": vectorstore.similarity_search(message)[:3]
         })
 
@@ -90,6 +89,9 @@ def update_data():
     get_pinecone_with_new_data()
 
 def get_pinecone_with_new_data():
+    global vectorstore
+    # delete all existing vectors in pinecone vectorstore
+    delete_vecs_pinecone()
     # load .txt file as a Document (object from Langchain)
     knowledge_doc = TextLoader("confluence_data.txt")
     # only string needed
@@ -99,8 +101,23 @@ def get_pinecone_with_new_data():
     knowledge_chunks = text_splitter.split_documents(knowledge_str)
     # set up vector database
     vectorstore = PineconeVectorStore.from_documents(
-        knowledge_chunks, embeddings, index_name="llm-km")
+        knowledge_chunks, embeddings, index_name=index_pinecone)
 
+def delete_vecs_pinecone():
+    # Initialize Pinecone
+    # Langchanin doesn't sopport deleting all vectors
+    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+    pc = Pinecone(api_key=PINECONE_API_KEY)
+   
+    # Delete the index
+    pc.delete_index(index_pinecone)
+
+    # create new index
+    pc.create_index(index_pinecone, 
+                    dimension=1536,
+                    metric="cosine",
+                    spec=ServerlessSpec(cloud="aws", region="us-east-1")
+                )
 
 # Einfluss des Chatverlaufs verringer bei der Abfrage der Vektor-Datenbank (REWRITING)
 # retriever = vectorStore.as_retriever(search_kwargs={"k":3})

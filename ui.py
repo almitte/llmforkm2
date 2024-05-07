@@ -7,6 +7,7 @@ from yaml.loader import SafeLoader
 # streamlit run interface.py
 
 
+
 with st.sidebar:
     with open('config.yaml') as file:
         config = yaml.load(file, Loader=SafeLoader)
@@ -25,9 +26,8 @@ with st.sidebar:
         st.error('Username/password is incorrect')
     elif st.session_state["authentication_status"] is None:
         st.warning('Please enter your username and password')
-        
-    language = st.selectbox("Sprache:", ["deutsch", "englisch"])
-    version = st.selectbox("Version:", ["gpt-3.5-turbo", "gpt-4","gpt-4-turbo"])
+
+side1, side2 = st.columns(2)
 
 # Chatbot nur anzeigen wenn eingeloggt
 if st.session_state["authentication_status"]:
@@ -36,13 +36,9 @@ if st.session_state["authentication_status"]:
     if "messages" not in st.session_state:
         st.session_state.messages = [] 
 
-    # Modellwechsel 
-    if version:
-        chain = rag.initialize_chain(version)
-
-    col1, col2 = st.columns(2)
-    clear = col1.button("Clear")
-    upgrade = col2.button("Update")
+    c1, c2 = st.columns(2)
+    clear = c1.button("Clear")
+    upgrade = c2.button("Update")
 
     if upgrade: 
         with st.status("Es dauert noch einen kleinen Moment"):    
@@ -51,9 +47,8 @@ if st.session_state["authentication_status"]:
             st.write("Daten wurden erfolgreich geupdated")
 
     if clear: 
-        st.session_state.messages = []  
-
-
+        st.session_state.messages = []
+        st.session_state.prompt_= False
 
     # with st.chat_message("assistant"):
     #        st.write("Hallo, wie kann ich behilflich sein?")     
@@ -75,8 +70,7 @@ if st.session_state["authentication_status"]:
     if "run_id" not in st.session_state:
         st.session_state.run_id = ""
     
-    if "buttons" not in st.session_state:
-        st.session_state.buttons = [False, False]    
+      
 
     # React to user input
     prompt = st.chat_input("Stellen Sie eine Frage", on_submit=callback)
@@ -84,7 +78,7 @@ if st.session_state["authentication_status"]:
     #st.markdown(st.session_state.prompt_)
     if st.session_state.prompt_:
         if prompt != None:
-            st.session_state.buttons = [False, False] # reset buttons
+            
             # Display user message in chat message container
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -100,23 +94,27 @@ if st.session_state["authentication_status"]:
                     # nur die letzten 10 Nachrichten beachten
                     history = st.session_state.messages[-10:-1]   
                     # Data wird gestreamt
-                    response = st.write_stream(rag.generate_response(prompt, history, chain))
+                    response = st.write_stream(rag.generate_response(prompt, history, rag.initialize_chain()))
                     # run-id zum feedback senden
                     st.session_state.run_id=cb.traced_runs[0].id
+                           
             # Add assistant response to chat history  
-            st.session_state.messages.append({"role": "assistant", "content": response})            
+            st.session_state.messages.append({"role": "assistant", "content": response})   
+                     
+        col1, col2, col3 = st.columns([0.08,0.08,0.84])
         # feedback buttons
-        col1, col2 = st.columns(2)
-        if sum(st.session_state.buttons)==0:
-            if col1.button("👍"): 
-                rag.send_feedback(st.session_state.run_id,1)
-                st.session_state.buttons[0] = True
-                st.rerun()
-            if col2.button("👎"):
-                rag.send_feedback(st.session_state.run_id,0) 
-                st.session_state.buttons[1] = True 
-                st.rerun()
+        if col1.button("👍"): 
+            rag.send_feedback(st.session_state.run_id,1)
+           
+            st.rerun()
+        if col2.button("👎"):
+            rag.send_feedback(st.session_state.run_id,0) 
             
+            st.rerun()
+         # display links to the documents used
+        with col3.expander("Links:"):
+            st.markdown("Title1: https://docs.streamlit.io/develop/api-reference/layout/st.expander")
+            st.markdown("TitleN: linkN")     
    
 
 

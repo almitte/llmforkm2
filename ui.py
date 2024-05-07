@@ -32,6 +32,7 @@ side1, side2 = st.columns(2)
 # Chatbot nur anzeigen wenn eingeloggt
 if st.session_state["authentication_status"]:
     st.title("Knowledge Management Chat")
+    st.write("Unsere Anwendung ermöglicht es dir, Confluence-Seiten in deinem Space automatisch zu extrahieren und dann mithilfe eines Language-Modeling-Modells (LLM) Fragen beantworten zu lassen. Darüber hinaus liefert sie relevante Seiten als Links zurück.")
     # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = [] 
@@ -70,8 +71,6 @@ if st.session_state["authentication_status"]:
     if "run_id" not in st.session_state:
         st.session_state.run_id = ""
     
-      
-
     # React to user input
     prompt = st.chat_input("Stellen Sie eine Frage", on_submit=callback)
     #st.markdown(prompt)
@@ -94,9 +93,13 @@ if st.session_state["authentication_status"]:
                     # nur die letzten 10 Nachrichten beachten
                     history = st.session_state.messages[-10:-1]   
                     # Data wird gestreamt
+                    # if len(rag.get_chunks_from_chroma(prompt)) == 0:
+                    #     response = st.write("Ich weiß es nicht.")
+                    # else:
+                    #     response = st.write_stream(rag.generate_response(prompt, history, rag.initialize_chain()))
+                    #     st.session_state.run_id=cb.traced_runs[0].id
                     response = st.write_stream(rag.generate_response(prompt, history, rag.initialize_chain()))
-                    # run-id zum feedback senden
-                    st.session_state.run_id=cb.traced_runs[0].id
+                    st.session_state.run_id=cb.traced_runs[0].id                      
                            
             # Add assistant response to chat history  
             st.session_state.messages.append({"role": "assistant", "content": response})   
@@ -113,8 +116,19 @@ if st.session_state["authentication_status"]:
             st.rerun()
          # display links to the documents used
         with col3.expander("Links:"):
-            st.markdown("Title1: https://docs.streamlit.io/develop/api-reference/layout/st.expander")
-            st.markdown("TitleN: linkN")     
+            # if len(rag.get_chunks_from_chroma(prompt)) == 0:
+            #     st.write("Keine relevanten Seiten gefunden.")
+            # else:
+            #     i = 1
+            #     for source in rag.relevant_sources:
+            #         st.write(f"Source{i}: "  + source)
+            #         i = i+1
+            i = 1
+            if len(rag.relevant_sources) == 0:
+                st.write("Keine relevanten Seiten gefunden!")
+            for source in rag.relevant_sources:
+                st.write(f"Source{i}: "  + source)
+                i = i+1
    
 
 

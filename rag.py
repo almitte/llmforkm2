@@ -28,7 +28,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # hyperparameters
 MAX_NUMBER_OF_RESULTS = 10
-THRESHHOLD_SIMILARITY = 0.8
+THRESHHOLD_SIMILARITY = 0.9
 chunk_size = 1000
 chunk_overlap= 20
 
@@ -57,7 +57,7 @@ vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embedding
 template = """
     Beantworte die Frage basierend auf dem gegebenen Kontext: {context}
             
-    Wenn das Beantworten der Frage nicht möglich ist durch den gegebenen Kontekt, antworte IMMER "Ich weiß es nicht". 
+    Wenn das Beantworten der Frage nicht möglich ist durch den gegebenen Kontekt oder kein Kontext gegeben wurde, antworte IMMER "Ich weiß es nicht". 
     """
 
 prompt = ChatPromptTemplate.from_messages([
@@ -66,11 +66,6 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{question}"),
     ])        
 
-def get_chunks_from_pinecone(message):
-    results = vectorstore.similarity_search_with_relevance_scores(message, k=MAX_NUMBER_OF_RESULTS)
-    filtered_results = [(doc, score) for doc, score in results if score >= THRESHHOLD_SIMILARITY]
-    return filtered_results
-
 
 def initialize_chain():
     
@@ -78,6 +73,11 @@ def initialize_chain():
 
     chain = prompt | model | parser 
     return chain
+
+def get_chunks_from_pinecone(message):
+    results = vectorstore.similarity_search_with_relevance_scores(message, k=MAX_NUMBER_OF_RESULTS)
+    filtered_results = [(doc, score) for doc, score in results if score >= THRESHHOLD_SIMILARITY]
+    return filtered_results
 
 def generate_response(message, history_list, chain):
 
@@ -97,7 +97,6 @@ def generate_response(message, history_list, chain):
         new_dic = (title, source)
         if new_dic not in relevant_sources:
             relevant_sources.append(new_dic) 
-        
 
     # relevant_sources = list(set(relevant_sources))
    
@@ -110,7 +109,7 @@ def generate_response(message, history_list, chain):
 
 
 def send_feedback(run_id, score):
-    key =f"feedback_{run_id}"
+    key =f"user_score"
     client.create_feedback(
         run_id,
         key=key,
@@ -118,17 +117,19 @@ def send_feedback(run_id, score):
         )
 
 
-def get_chunks_from_chroma(message):
-    # Prepare the DB.
-    db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+# def get_chunks_from_chroma(message):
+#     # Prepare the DB.
+#     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
 
-    # Search the DB for relevant chunks for answering the question
-    results = db.similarity_search_with_relevance_scores(message, k=MAX_NUMBER_OF_RESULTS)
+#     # Search the DB for relevant chunks for answering the question
+#     results = db.similarity_search_with_relevance_scores(message, k=MAX_NUMBER_OF_RESULTS)
     
-    # Filter relevant chunks to only the chunks with a simalarity greater than treshhold 
-    filtered_results = [(doc, score) for doc, score in results if score >= THRESHHOLD_SIMILARITY]
+#     # Filter relevant chunks to only the chunks with a simalarity greater than treshhold 
+#     filtered_results = [(doc, score) for doc, score in results if score >= THRESHHOLD_SIMILARITY]
 
-    return filtered_results
+#     return filtered_results
+
+
 
 def update_data():
     # update txt file

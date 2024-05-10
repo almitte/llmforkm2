@@ -95,48 +95,46 @@ if True: #st.session_state["authentication_status"]:
                 # Tracing der run_id
                 from langchain.callbacks import collect_runs
                 with collect_runs() as cb:
-                    # nur die letzten 10 Nachrichten beachten
-                    history = st.session_state.messages[-10:-1]   
+                    # nur die letzten 4 Nachrichten beachten
+                    history = st.session_state.messages[-7:-1]   
                     # Data wird gestreamt
-                    # if len(rag.get_chunks_from_chroma(prompt)) == 0:
+                    # if len(rag.get_chunks_from_pinecone(prompt)) == 0:
                     #     response = st.write("Ich weiß es nicht.")
                     # else:
-                    #     response = st.write_stream(rag.generate_response(prompt, history, rag.initialize_chain()))
-                    #     st.session_state.run_id=cb.traced_runs[0].id
                     response = st.write_stream(rag.generate_response(prompt, history, rag.initialize_chain()))
-                    st.session_state.run_id=cb.traced_runs[0].id                      
+                    st.session_state.run_id=cb.traced_runs[0].id
                            
             # Add assistant response to chat history  
             st.session_state.messages.append({"role": "assistant", "content": response})   
-                     
         col1, col2, col3 = st.columns([0.08,0.08,0.84])
-        # feedback buttons
+            # feedback buttons
         if col1.button("👍"): 
             rag.send_feedback(st.session_state.run_id,1)
-           
+        
             st.rerun()
         if col2.button("👎"):
             rag.send_feedback(st.session_state.run_id,0) 
             
             st.rerun()
-         # display links to the documents used
+        # display links to the documents used
         with col3.expander("Links:"):
-            # if len(rag.get_chunks_from_chroma(prompt)) == 0:
+            # if len(rag.get_chunks_from_pinecone(prompt)) == 0:
             #     st.write("Keine relevanten Seiten gefunden.")
             # else:
             #     i = 1
             #     for source in rag.relevant_sources:
             #         st.write(f"Source{i}: "  + source)
             #         i = i+1
-            if response=="Ich weiß es nicht.":
+            if st.session_state.messages[-1]["content"]=="Ich weiß es nicht.":
                 st.write("Keine relevanten Seiten gefunden!")
             else: 
                 for source_tupel in rag.relevant_sources:
                     title, source = source_tupel
                     st.write(f"{title}: "  +  source)
+                                                
+        
             
-                
-   
+
 
 
             

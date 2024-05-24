@@ -16,7 +16,6 @@ from langchain_community.document_loaders import TextLoader
 from pinecone import Pinecone, ServerlessSpec
 from langchain.vectorstores.chroma import Chroma
 from dotenv import load_dotenv
-import re
 from convert_documents import split_text, load_documents
         
 # load .env Variablen 
@@ -30,7 +29,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MAX_NUMBER_OF_RESULTS = 10
 THRESHHOLD_SIMILARITY = 0.9
 chunk_size = 1000
-chunk_overlap= 20
+chunk_overlap = 20
 
 
 
@@ -52,19 +51,25 @@ embeddings = OpenAIEmbeddings()
 # Initialize vectorstore
 index_pinecone = "llm-km"
 vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embeddings)
+retriever = vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
 
 # template prompt
 template = """
     Beantworte die Frage basierend auf dem gegebenen Kontext: {context}
-            
-    Wenn das Beantworten der Frage nicht möglich ist durch den gegebenen Kontekt oder kein Kontext gegeben wurde, antworte IMMER "Ich weiß es nicht". 
+          
+    Wenn das Beantworten der Frage nicht möglich ist durch den gegebenen Kontext oder kein Kontext gegeben wurde, antworte IMMER "Ich weiß es nicht". 
     """
 
 prompt = ChatPromptTemplate.from_messages([
     ("system", template),
-    MessagesPlaceholder(variable_name="history"),
+    MessagesPlaceholder(variable_name="chat_history"),
     ("human", "{question}"),
-    ])        
+    ]) 
+
+rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "chat_history"), 
+                                                   ("user", "{input}"),
+                                                   ("user", "Mit der gegebenen Konversation, generiere eine Suchabfrage zum Nachschlagen, um Informationen zu erhalten, die für die Konversation relevant sind. Gib nur die wirkliche Suchabfrage aus")
+                                                   ])       
 
 
 def initialize_chain():
@@ -72,38 +77,42 @@ def initialize_chain():
     model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo")
 
     chain = prompt | model | parser 
+    global rewriting_chain
+    rewriting_chain = rewriting_prompt | model | parser
     return chain
 
-def get_chunks_from_pinecone(message):
-    results = vectorstore.similarity_search_with_relevance_scores(message, k=MAX_NUMBER_OF_RESULTS)
-    filtered_results = [(doc, score) for doc, score in results if score >= THRESHHOLD_SIMILARITY]
-    return filtered_results
 
 def generate_response(message, history_list, chain):
-
-    filtered_results = get_chunks_from_pinecone(message)
-    context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in filtered_results])
-    history =[]
+    chat_history =[]
     for mes in history_list:
         # verschiedene Wrapper für verschiedene roles
         m = HumanMessage(content=mes["content"]) if mes["role"] == "user" else AIMessage(content=mes["content"])
-        history.append(m)
+        chat_history.append(m)
     
+    if len(chat_history) == 0: 
+        rewritten_message = message
+    else: 
+        rewritten_message = rewriting_chain.invoke({
+            "chat_history": chat_history,
+            "input": message,
+            })
+    
+    relevant_documents = retriever.invoke(rewritten_message)
+    
+    context_text = "\n\n---\n\n".join([doc.page_content for doc in relevant_documents])
     global relevant_sources 
     relevant_sources = []
-    for doc, _score in filtered_results:
+    for doc in relevant_documents:
         source = "https://llmgruppenarbeit.atlassian.net/wiki/spaces/KB/pages/" + doc.metadata.get("p_id")
         title = doc.metadata.get("p_title")
         new_dic = (title, source)
         if new_dic not in relevant_sources:
             relevant_sources.append(new_dic) 
-
-    # relevant_sources = list(set(relevant_sources))
-   
+    
     # .stream statt .invoke um Antwort zu streamen
     return chain.stream({
-        "history": history, 
-        "question": message,
+        "chat_history": chat_history, 
+        "question": rewritten_message,
         "context": context_text
         })
 
@@ -167,13 +176,5 @@ def delete_vecs_pinecone():
                     spec=ServerlessSpec(cloud="aws", region="us-east-1")
                 )
 
-# Einfluss des Chatverlaufs verringer bei der Abfrage der Vektor-Datenbank (REWRITING)
-# retriever = vectorStore.as_retriever(search_kwargs={"k":3})
-# retriever_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "history"), 
-#                                                     ("human", {input}),
-#                                                     ("human", "Mit der gegebenen Konversation, generiere eine Suchabfrage zum Nachschlagen, um Informationen zu erhalten, die für die Konversation relevant sind.")])
 
-# history_aware_retriever = create_history_aware_retriever(
-#     llm=model, retriever=retriever, prompt=retriever_prompt
-# )
 

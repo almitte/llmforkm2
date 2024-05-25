@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit_authenticator as stauth
 import rag
-import data
+import confluence_api
 import yaml
 from yaml.loader import SafeLoader
 # streamlit run interface.py
@@ -45,7 +45,7 @@ if True: #st.session_state["authentication_status"]:
         with st.status("Es dauert noch einen kleinen Moment"):    
         # update die Knowledge Base 
             st.write("loading new data")
-            data.get_data_confluence()
+            confluence_api.get_data_confluence()
             st.write("new data loaded from confluence")
             st.write("upserting data to pinecone")
             # upsert new data to pinecone

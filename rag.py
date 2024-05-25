@@ -11,14 +11,14 @@ from langchain.callbacks import LangChainTracer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-import data 
+import confluence_api 
 from langchain_community.document_loaders import TextLoader
 from pinecone import Pinecone, ServerlessSpec
 from langchain.vectorstores.chroma import Chroma
 from dotenv import load_dotenv
 from convert_documents import split_text, load_documents
 from typing import List
-from langchain_core.runnables import RunnableParallel
+from langchain_core.runnables import RunnableParallel, RunnableLambda
 from operator import itemgetter
         
 # load .env Variablen 
@@ -35,7 +35,7 @@ THRESHHOLD_SIMILARITY = 0.9
 
 
 
-relevant_sources=""
+relevant_sources = ""
 
 # tracing mit Langsmith from Langchain
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
@@ -55,10 +55,11 @@ index_pinecone = "llm-km"
 vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embeddings)
 retriever = vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
 
-# template prompt
+# template to control for hallucination and contradictions
 rag_template = """
     Beantworte die Frage basierend auf dem gegebenen Kontext: {context}
-          
+    
+    Wenn es Widersprüche im Kontext gibt, gebe unbedingt alle Wiedersprüche aus die, die Frage beantworten.      
     Wenn das Beantworten der Frage nicht möglich ist durch den gegebenen Kontext oder kein Kontext gegeben wurde, antworte IMMER "Ich weiß es nicht". 
     """
 
@@ -68,9 +69,14 @@ rag_prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}"),
     ]) 
 
+# rewrite query given the chat_history
+rewriting_template = """
+    Ergänze "{input}" nur mit Informationen aus der Konversation, und auch nur wenn diese benötigt werden für die Beantwortung. Gib nur den transformierten Input aus.
+    
+    """
+
 rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "chat_history"), 
-                                                   ("user", "{input}"),
-                                                   ("user", "Mit der gegebenen Konversation, generiere eine Suchabfrage zum Nachschlagen, um Informationen zu erhalten, die für die Konversation relevant sind. Gib nur die wirkliche Suchabfrage aus")
+                                                   ("user", rewriting_template)
                                                    ])       
 
  # compose page content of Documents to one string
@@ -90,6 +96,16 @@ rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_
 # do nothing 
 no_rewriting = RunnableParallel({"chat_history": itemgetter("chat_history"), "input": itemgetter("input")})
 
+# only rewrite with a given chat history
+def route(info):
+    if len(info["chat_history"])!=0:
+        return rewriting
+    else:
+        return no_rewriting
+
+# whole chain that gets invoked 
+rag_chain = route | retrieval | rag_prompt | model | parser
+
 
 def generate_response(message, history_list, stream=True):
     chat_history =[]
@@ -97,11 +113,6 @@ def generate_response(message, history_list, stream=True):
         # verschiedene Wrapper für verschiedene roles
         m = HumanMessage(content=mes["content"]) if mes["role"] == "user" else AIMessage(content=mes["content"])
         chat_history.append(m)
-    
-    # rewriting happens only with an existing chat history
-    check_rewriting = no_rewriting if len(chat_history) == 0 else rewriting 
-
-    rag_chain = check_rewriting| retrieval | rag_prompt | model | parser
     
     if stream:
         return rag_chain.stream({
@@ -112,6 +123,7 @@ def generate_response(message, history_list, stream=True):
             "chat_history": chat_history, 
             "input": message
             })
+
 
 def get_relevant_sources():
     relevant_sources = []
@@ -125,12 +137,61 @@ def get_relevant_sources():
         
 
 def send_feedback(run_id, score):
-    key =f"user_score"
-    client.create_feedback(
-        run_id,
-        key=key,
-        score=score,
-        )
+    key = f"user_score"
+    client.create_feedback(run_id, key=key, score=score)
+
+
+def update_data():
+    # update txt file
+    print("loading new data")
+    confluence_api.get_data_confluence()
+    print("new data loaded from confluence")
+    # upsert new data to pinecone
+    global vectorstore
+    # delete all existing vectors in pinecone vectorstore
+    delete_vecs_pinecone()
+    print("delete existing vectors")
+    # load existing documents from json
+    documents = load_documents(file="Data/confluence_data.json")
+    # split text
+    knowledge_chunks =  split_text(documents)
+    # set up vector database and overwrite varible vectorstore with new one
+    print("upserting data to pinecone")
+    vectorstore = PineconeVectorStore.from_documents(
+        knowledge_chunks, embeddings, index_name=index_pinecone)
+    print("vectorstore is updated")
+
+
+def delete_vecs_pinecone():
+    # Langchanin doesn't sopport deleting all vectors
+    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+    # Initialize Pinecone
+    pc = Pinecone(api_key=PINECONE_API_KEY)
+    # Delete the index
+    pc.delete_index(index_pinecone)
+    # create new index with the same name 
+    pc.create_index(index_pinecone, 
+                    dimension=1536,
+                    metric="cosine",
+                    spec=ServerlessSpec(cloud="aws", region="us-east-1")
+                )
+
+
+# for debugging purposes
+if __name__ == "__main__":
+    # Initialize chat history
+    chat_history = []
+    
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() == 'exit':
+            break
+        response = generate_response(user_input, chat_history, stream=False)
+        chat_history.append({"role": "user", "content": user_input})
+        chat_history.append({"role": "assistant", "content": response})
+        print(response)
+
+
 
 
 # def get_chunks_from_chroma(message):
@@ -145,57 +206,4 @@ def send_feedback(run_id, score):
 
 #     return filtered_results
 
-
-
-def update_data():
-    # update txt file
-    print("loading new data")
-    data.get_data_confluence()
-    print("new data loaded from confluence")
-    print("upsert data to pinecone")
-    # upsert new data to pinecone
-    get_pinecone_with_new_data()
-    print("vectorstore is updated")
-
-def get_pinecone_with_new_data():
-    global vectorstore
-    # delete all existing vectors in pinecone vectorstore
-    delete_vecs_pinecone()
-    documents = load_documents(file="Data/confluence_data.json")
-    knowledge_chunks =  split_text(documents)
-    # set up vector database
-    vectorstore = PineconeVectorStore.from_documents(
-        knowledge_chunks, embeddings, index_name=index_pinecone)
-
-def delete_vecs_pinecone():
-    # Initialize Pinecone
-    # Langchanin doesn't sopport deleting all vectors
-    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-    pc = Pinecone(api_key=PINECONE_API_KEY)
-   
-    # Delete the index
-    pc.delete_index(index_pinecone)
-
-    # create new index
-    pc.create_index(index_pinecone, 
-                    dimension=1536,
-                    metric="cosine",
-                    spec=ServerlessSpec(cloud="aws", region="us-east-1")
-                )
-
-
-
-if __name__ == "__main__":
-    
-    # Initialize chat history
-    chat_history = []
-
-    while True:
-        user_input = input("You: ")
-        if user_input.lower() == 'exit':
-            break
-        response = generate_response(user_input, chat_history, stream=False)
-        chat_history.append({"role": "user", "content": user_input})
-        chat_history.append({"role": "assistant", "content": response})
-        print(response)
          

@@ -9,12 +9,6 @@ from langchain.vectorstores.chroma import Chroma
 from langchain_pinecone import PineconeVectorStore
 from dotenv import load_dotenv
 
-DATA_PATH = "Data"
-CHROMA_PATH = "chroma"
-
-def main():
-    ...
-    #generate_data_store()
     
 # Define the metadata extraction function.
 def metadata_func(record: dict, metadata: dict) -> dict:
@@ -59,6 +53,14 @@ def split_text(documents: list[Document]):
     )
     chunks = text_splitter.split_documents(documents)
     return chunks
+
+
+DATA_PATH = "Data"
+CHROMA_PATH = "chroma"
+
+def main():
+    ...
+    #generate_data_store()
 
 # def generate_data_store():
 #     """

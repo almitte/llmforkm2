@@ -32,7 +32,7 @@ def get_all_pages(confluence: Confluence, space_key: str, start: int = 0, limit:
 
 def get_data_confluence():
     """
-    Calls Confluence API to put Confluence Pages in txt files
+    Calls Confluence API to put Confluence Pages in json file
 
     """
     # Configuration

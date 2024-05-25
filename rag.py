@@ -17,6 +17,9 @@ from pinecone import Pinecone, ServerlessSpec
 from langchain.vectorstores.chroma import Chroma
 from dotenv import load_dotenv
 from convert_documents import split_text, load_documents
+from typing import List
+from langchain_core.runnables import RunnableParallel
+from operator import itemgetter
         
 # load .env Variablen 
 load_dotenv()
@@ -28,8 +31,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # hyperparameters
 MAX_NUMBER_OF_RESULTS = 10
 THRESHHOLD_SIMILARITY = 0.9
-chunk_size = 1000
-chunk_overlap = 20
+
 
 
 
@@ -54,16 +56,16 @@ vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embedding
 retriever = vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
 
 # template prompt
-template = """
+rag_template = """
     Beantworte die Frage basierend auf dem gegebenen Kontext: {context}
           
     Wenn das Beantworten der Frage nicht möglich ist durch den gegebenen Kontext oder kein Kontext gegeben wurde, antworte IMMER "Ich weiß es nicht". 
     """
 
-prompt = ChatPromptTemplate.from_messages([
-    ("system", template),
+rag_prompt = ChatPromptTemplate.from_messages([
+    ("system", rag_template),
     MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{question}"),
+    ("human", "{input}"),
     ]) 
 
 rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "chat_history"), 
@@ -71,51 +73,56 @@ rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variabl
                                                    ("user", "Mit der gegebenen Konversation, generiere eine Suchabfrage zum Nachschlagen, um Informationen zu erhalten, die für die Konversation relevant sind. Gib nur die wirkliche Suchabfrage aus")
                                                    ])       
 
-
-def initialize_chain():
+ # compose page content of Documents to one string
+def format_docs(docs):
+    global relevant_docs
+    relevant_docs = docs
+    return "\n\n".join([d.page_content for d in docs])
     
-    model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo")
+model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
 
-    chain = prompt | model | parser 
-    global rewriting_chain
-    rewriting_chain = rewriting_prompt | model | parser
-    return chain
+# RunnableParallel so both values of the dictionary get parallel excecuted, itemgetter to get the values of keys from the input dictionary
+retrieval = RunnableParallel({"context": itemgetter("input") | retriever | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
+
+# rewrite the query given the chat history
+rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_history": itemgetter("chat_history")})
+
+# do nothing 
+no_rewriting = RunnableParallel({"chat_history": itemgetter("chat_history"), "input": itemgetter("input")})
 
 
-def generate_response(message, history_list, chain):
+def generate_response(message, history_list, stream=True):
     chat_history =[]
     for mes in history_list:
         # verschiedene Wrapper für verschiedene roles
         m = HumanMessage(content=mes["content"]) if mes["role"] == "user" else AIMessage(content=mes["content"])
         chat_history.append(m)
     
-    if len(chat_history) == 0: 
-        rewritten_message = message
-    else: 
-        rewritten_message = rewriting_chain.invoke({
-            "chat_history": chat_history,
-            "input": message,
+    # rewriting happens only with an existing chat history
+    check_rewriting = no_rewriting if len(chat_history) == 0 else rewriting 
+
+    rag_chain = check_rewriting| retrieval | rag_prompt | model | parser
+    
+    if stream:
+        return rag_chain.stream({
+            "chat_history": chat_history, 
+            "input": message
             })
-    
-    relevant_documents = retriever.invoke(rewritten_message)
-    
-    context_text = "\n\n---\n\n".join([doc.page_content for doc in relevant_documents])
-    global relevant_sources 
+    else: return rag_chain.invoke({
+            "chat_history": chat_history, 
+            "input": message
+            })
+
+def get_relevant_sources():
     relevant_sources = []
-    for doc in relevant_documents:
+    for doc in relevant_docs:
         source = "https://llmgruppenarbeit.atlassian.net/wiki/spaces/KB/pages/" + doc.metadata.get("p_id")
         title = doc.metadata.get("p_title")
         new_dic = (title, source)
         if new_dic not in relevant_sources:
             relevant_sources.append(new_dic) 
-    
-    # .stream statt .invoke um Antwort zu streamen
-    return chain.stream({
-        "chat_history": chat_history, 
-        "question": rewritten_message,
-        "context": context_text
-        })
-
+    return relevant_sources
+        
 
 def send_feedback(run_id, score):
     key =f"user_score"
@@ -178,3 +185,17 @@ def delete_vecs_pinecone():
 
 
 
+if __name__ == "__main__":
+    
+    # Initialize chat history
+    chat_history = []
+
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() == 'exit':
+            break
+        response = generate_response(user_input, chat_history, stream=False)
+        chat_history.append({"role": "user", "content": user_input})
+        chat_history.append({"role": "assistant", "content": response})
+        print(response)
+         

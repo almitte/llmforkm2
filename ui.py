@@ -101,7 +101,7 @@ if True: #st.session_state["authentication_status"]:
                     # if len(rag.get_chunks_from_pinecone(prompt)) == 0:
                     #     response = st.write("Ich weiß es nicht.")
                     # else:
-                    response = st.write_stream(rag.generate_response(prompt, history, rag.initialize_chain()))
+                    response = st.write_stream(rag.generate_response(prompt, history))
                     st.session_state.run_id=cb.traced_runs[0].id
                            
             # Add assistant response to chat history  
@@ -128,7 +128,7 @@ if True: #st.session_state["authentication_status"]:
             if st.session_state.messages[-1]["content"]=="Ich weiß es nicht.":
                 st.write("Keine relevanten Seiten gefunden!")
             else: 
-                for source_tupel in rag.relevant_sources:
+                for source_tupel in rag.get_relevant_sources():
                     title, source = source_tupel
                     st.write(f"{title}: "  +  source)
                                                 

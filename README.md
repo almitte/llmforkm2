@@ -32,13 +32,3 @@ streamlit run ui.py
 ```
 
 Mac: Control + C to end
-
-
-OPENAI_API_KEY = "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"
-PINECONE_API_KEY = "7013bfb3-4ebc-4181-a894-c9721d1bc1bb"
-PINECONE_API_ENV = "us-east-1"
-LANGCHAIN_API_KEY = "ls__b502fece98e349a18a0a5178ebeaedbc"
-CONFLUENCE_API = "ATATT3xFfGF0zh7EBrasRHZQEerjfJTdqleap-5uJqM9qFTdP8V8sZY91qm3hcu1kdKC0GnIHET_TPlFSLcx-nJ1OA3hvwJBSkhtn_veaqpJDxqItb_NXdAjfR4OIKh31a3VEYqpdTeYGeHYZx1MaBn4KAHSJWlHyba0i4pCTuLSEctUH82_cAk=A878B409"
-confluence_username = "max1912sch@gmail.com"
-confluence_url = "https://llmgruppenarbeit.atlassian.net/"
-confluence_spacekey = "KB"

@@ -5,181 +5,156 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain.prompts import ChatPromptTemplate 
 from langchain_core.prompts import MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain.chains.history_aware_retriever import create_history_aware_retriever
 from langsmith import Client
 from langchain.callbacks import LangChainTracer
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-import confluence_api 
-from langchain_community.document_loaders import TextLoader
-from pinecone import Pinecone, ServerlessSpec
 from langchain.vectorstores.chroma import Chroma
 from dotenv import load_dotenv
-from convert_documents import split_text, load_documents
-from typing import List
-from langchain_core.runnables import RunnableParallel, RunnableLambda
+from langchain_core.runnables import RunnableParallel, RunnableLambda, RunnablePassthrough
 from operator import itemgetter
+from typing import Literal, Generator 
         
 # load .env Variablen 
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Chroma DB
-#CHROMA_PATH = "chroma"
-
-# hyperparameters
-MAX_NUMBER_OF_RESULTS = 10
-THRESHHOLD_SIMILARITY = 0.9
-
-
-
-
-relevant_sources = ""
-
-# tracing mit Langsmith from Langchain
+# tracing with Langsmith from Langchain
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_PROJECT"] = "RAG-project"
 os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
 os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
 client = Client()
 
-# konvertiert AI Message zu einem String
-parser = StrOutputParser() 
+def initialize_chain():
+    # template to control for hallucination and contradictions
+    rag_template = """
+        FRAGE: {input} 
+        
+        KONTEXT: {context}
+        
+        ANWEISUNG: 
+        Beantworte die FRAGE basierend auf dem gegebenen KONTEXT.  
+        Wenn KONTEXT leer ist, anworte mit "Ich weiß es nicht".
+        Wenn das Beantworten der FRAGE nicht möglich ist durch den gegebenen KONTEXT, antworte immer "Ich weiß es nicht".
+        
+        """
 
-# Embedding der Wissenschunks
-embeddings = OpenAIEmbeddings()
-
-# Initialize vectorstore
-index_pinecone = "llm-km"
-vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embeddings)
-retriever = vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
-
-# template to control for hallucination and contradictions
-rag_template = """
-    Beantworte die Frage basierend auf dem gegebenen Kontext: {context}
+    rag_prompt = ChatPromptTemplate.from_messages([
+        ("system", rag_template),
+        MessagesPlaceholder(variable_name="chat_history"),
+        ("human", "{input}"),
+        ]) 
     
-    Wenn es Widersprüche im Kontext gibt, gebe unbedingt alle Wiedersprüche aus die, die Frage beantworten.      
-    Wenn das Beantworten der Frage nicht möglich ist durch den gegebenen Kontext oder kein Kontext gegeben wurde, antworte IMMER "Ich weiß es nicht". 
-    """
+    # rewrite query given the chat_history
+    rewriting_template = """
+        FRAGE: {input}
+        
+        KONTEXT: {chat_history}
+        
+        ANWEISUNG: 
+        Ergänze FRAGE mit Informationen aus KONTEXT, wenn diese relevant zur FRAGE sind. Gib nur die transformierte FRAGE aus.
+        """
 
-rag_prompt = ChatPromptTemplate.from_messages([
-    ("system", rag_template),
-    MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{input}"),
-    ]) 
+    rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "chat_history"), 
+                                                    ("user", rewriting_template)
+                                                    ])       
 
-# rewrite query given the chat_history
-rewriting_template = """
-    Ergänze "{input}" nur mit Informationen aus der Konversation, und auch nur wenn diese benötigt werden für die Beantwortung. Gib nur den transformierten Input aus.
-    
-    """
+    # inistialize specific model with api key and temperature    
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
 
-rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "chat_history"), 
-                                                   ("user", rewriting_template)
-                                                   ])       
+    # parses AIMessage to string
+    parser = StrOutputParser() 
 
- # compose page content of Documents to one string
-def format_docs(docs):
-    global relevant_docs
-    relevant_docs = docs
-    return "\n\n".join([d.page_content for d in docs])
-    
-model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
+    # for embedding of chunks 
+    embeddings = OpenAIEmbeddings()
 
-# RunnableParallel so both values of the dictionary get parallel excecuted, itemgetter to get the values of keys from the input dictionary
-retrieval = RunnableParallel({"context": itemgetter("input") | retriever | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
+    # initialize vectorstore
+    index_pinecone = "llm-km"
+    vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embeddings)
 
-# rewrite the query given the chat history
-rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_history": itemgetter("chat_history")})
+    # hyperparameters for retriever 
+    MAX_NUMBER_OF_RESULTS = 10
+    THRESHHOLD_SIMILARITY = 0.9
 
-# do nothing 
-no_rewriting = RunnableParallel({"chat_history": itemgetter("chat_history"), "input": itemgetter("input")})
+    # specifiy vectorstore and parameters for retriever 
+    retriever = vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
 
-# only rewrite with a given chat history
-def route(info):
-    if len(info["chat_history"])!=0:
-        return rewriting
-    else:
-        return no_rewriting
+    # 2 functions for chaining:
+    # compose page content of Documents to one string
+    def format_docs(docs):
+        global relevant_docs
+        relevant_docs = docs
+        return "\n\n".join([d.page_content for d in docs])
 
-# whole chain that gets invoked 
-rag_chain = route | retrieval | rag_prompt | model | parser
+    # only rewrite if there is a chat history
+    def route(info):
+        if len(info["chat_history"])!=0:
+            return rewriting
+        else:
+            return no_rewriting
 
+    # RunnableParallel so all value "chains" of the dictionary get parallel excecuted, itemgetter to get the values of keys from the input dictionary
+    retrieval = RunnableParallel({"context": itemgetter("input") | retriever | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
 
-def generate_response(message, history_list, stream=True):
+    # rewrite the query given the chat history
+    rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_history": itemgetter("chat_history")})
+
+    # do nothing and pass on the entire dictionary 
+    no_rewriting = RunnablePassthrough()
+
+    # rag chain that gets invoked when you generate a response
+    rag_chain = route | retrieval | rag_prompt | model | parser
+    return rag_chain
+
+def generate_response(message: str, history_list: list[dict], stream: bool = True) -> str | Generator[str, None, None]:
     chat_history =[]
+    # transform the chat history to langchain chat_history list
+    # wrapping messages with Human and AIMessage
     for mes in history_list:
-        # verschiedene Wrapper für verschiedene roles
         m = HumanMessage(content=mes["content"]) if mes["role"] == "user" else AIMessage(content=mes["content"])
-        chat_history.append(m)
-    
+        chat_history.append(m)   
+    chain = initialize_chain()     
+    # option to choose streaming or getting the entire response at once
     if stream:
-        return rag_chain.stream({
+        response = chain.stream({
             "chat_history": chat_history, 
             "input": message
             })
-    else: return rag_chain.invoke({
+    else: 
+        response = chain.invoke({
             "chat_history": chat_history, 
             "input": message
-            })
+            })       
+    return response
+     
 
-
-def get_relevant_sources():
+def get_relevant_sources() -> list[tuple[str, str]]:
+    confluence_spacekey=os.getenv("LANGCHAIN_API_KEY")
     relevant_sources = []
+    # relevant_docs are the chunks, each wrapped in a Document object
     for doc in relevant_docs:
-        source = "https://llmgruppenarbeit.atlassian.net/wiki/spaces/KB/pages/" + doc.metadata.get("p_id")
+        # put together the link to page of the chunk
+        source = f"https://llmgruppenarbeit.atlassian.net/wiki/spaces/{confluence_spacekey}/pages/" + doc.metadata.get("p_id")
         title = doc.metadata.get("p_title")
+        # tuple of the title and link of the chunk
         new_dic = (title, source)
+        # no duplicates allowed
         if new_dic not in relevant_sources:
             relevant_sources.append(new_dic) 
     return relevant_sources
         
 
-def send_feedback(run_id, score):
-    key = f"user_score"
+# send feedback (1 or 0) to tracer langsmith 
+def send_feedback(run_id: str, score: Literal[0,1]):
+    key = f"user_score_{run_id}"
     client.create_feedback(run_id, key=key, score=score)
 
 
-def update_data():
-    # update txt file
-    print("loading new data")
-    confluence_api.get_data_confluence()
-    print("new data loaded from confluence")
-    # upsert new data to pinecone
-    global vectorstore
-    # delete all existing vectors in pinecone vectorstore
-    delete_vecs_pinecone()
-    print("delete existing vectors")
-    # load existing documents from json
-    documents = load_documents(file="Data/confluence_data.json")
-    # split text
-    knowledge_chunks =  split_text(documents)
-    # set up vector database and overwrite varible vectorstore with new one
-    print("upserting data to pinecone")
-    vectorstore = PineconeVectorStore.from_documents(
-        knowledge_chunks, embeddings, index_name=index_pinecone)
-    print("vectorstore is updated")
-
-
-def delete_vecs_pinecone():
-    # Langchanin doesn't sopport deleting all vectors
-    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-    # Initialize Pinecone
-    pc = Pinecone(api_key=PINECONE_API_KEY)
-    # Delete the index
-    pc.delete_index(index_pinecone)
-    # create new index with the same name 
-    pc.create_index(index_pinecone, 
-                    dimension=1536,
-                    metric="cosine",
-                    spec=ServerlessSpec(cloud="aws", region="us-east-1")
-                )
 
 
 # for debugging purposes
 if __name__ == "__main__":
-    # Initialize chat history
     chat_history = []
     
     while True:
@@ -192,6 +167,13 @@ if __name__ == "__main__":
         print(response)
 
 
+
+
+
+
+
+# Chroma DB
+#CHROMA_PATH = "chroma"
 
 
 # def get_chunks_from_chroma(message):

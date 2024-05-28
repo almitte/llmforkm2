@@ -1,9 +1,10 @@
 import streamlit as st
 import streamlit_authenticator as stauth
 import rag
-import confluence_api
+from confluence_api import get_data_confluence
 import yaml
-from yaml.loader import SafeLoader
+from vectorstore_functions import delete_vecs_pinecone, upsert_data_to_pinecone
+
 # streamlit run interface.py
 
 
@@ -39,27 +40,28 @@ if True: #st.session_state["authentication_status"]:
 
     c1, c2 = st.columns(2)
     clear = c1.button("Clear")
-    upgrade = c2.button("Update")
+    update = c2.button("Update")
 
-    if upgrade: 
+    # update button loads data from confluence
+    if update: 
         with st.status("Es dauert noch einen kleinen Moment"):    
-        # update die Knowledge Base 
-            st.write("loading new data")
-            confluence_api.get_data_confluence()
-            st.write("new data loaded from confluence")
-            st.write("upserting data to pinecone")
-            # upsert new data to pinecone
-            rag.get_pinecone_with_new_data()
-            st.write("vectorstore is updated")
+        # updates Knowledge Base 
+            # update json file
+            get_data_confluence()
+            st.write("Wissen wurde von Confluence extrahiert.")
+            st.write("Wissen wird auf Pinecone hochgeladen...")
+            # delete all existing vectors in pinecone vectorstore
+            delete_vecs_pinecone()
+            #upsert_data_to_pinecone()
+            st.write("Knowledge Base geupdated!")
 
+    # clear button clears all messages
     if clear: 
         st.session_state.messages = []
         st.session_state.prompt_= False
 
-    # with st.chat_message("assistant"):
-    #        st.write("Hallo, wie kann ich behilflich sein?")     
-
-    # Display chat messages from history on app rerun
+ 
+    # display chat messages from history on app rerun
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])       
@@ -68,7 +70,7 @@ if True: #st.session_state["authentication_status"]:
     if "prompt_" not in st.session_state:
         st.session_state.prompt_ =  False 
     
-    # function that changes session_state             
+    # function that changes session_state         
     def callback():
         st.session_state.prompt_ =  True 
 
@@ -76,38 +78,34 @@ if True: #st.session_state["authentication_status"]:
     if "run_id" not in st.session_state:
         st.session_state.run_id = ""
     
-    # React to user input
+    # react to user input
     prompt = st.chat_input("Stellen Sie eine Frage", on_submit=callback)
-    #st.markdown(prompt)
-    #st.markdown(st.session_state.prompt_)
+   
     if st.session_state.prompt_:
         if prompt != None:
             
-            # Display user message in chat message container
+            # display user message in chat message container
             with st.chat_message("user"):
                 st.markdown(prompt)
-            # Add user message to chat history
+            # add user message to chat history
             st.session_state.messages.append({"role": "user", "content": prompt})
-        # Display assistant response in chat message container
+        # display assistant response in chat message container
         if st.session_state.messages[-1]["role"]!="assistant":
             # Antwort auf Basis des Verlaufs und des Prompts generieren
             with st.chat_message("assistant"):
-                # Tracing der run_id
+                # tracing of run_id
                 from langchain.callbacks import collect_runs
                 with collect_runs() as cb:
-                    # nur die letzten 4 Nachrichten beachten
+                    # not the entire history 
                     history = st.session_state.messages[-7:-1]   
-                    # Data wird gestreamt
-                    # if len(rag.get_chunks_from_pinecone(prompt)) == 0:
-                    #     response = st.write("Ich weiß es nicht.")
-                    # else:
+                    # stream the input from generatorobject
                     response = st.write_stream(rag.generate_response(prompt, history))
                     st.session_state.run_id=cb.traced_runs[0].id
                            
-            # Add assistant response to chat history  
+            # add assistant response to chat history  
             st.session_state.messages.append({"role": "assistant", "content": response})   
         col1, col2, col3 = st.columns([0.08,0.08,0.84])
-            # feedback buttons
+        # feedback buttons
         if col1.button("👍"): 
             rag.send_feedback(st.session_state.run_id,1)
         
@@ -116,15 +114,9 @@ if True: #st.session_state["authentication_status"]:
             rag.send_feedback(st.session_state.run_id,0) 
             
             st.rerun()
+            
         # display links to the documents used
         with col3.expander("Links:"):
-            # if len(rag.get_chunks_from_pinecone(prompt)) == 0:
-            #     st.write("Keine relevanten Seiten gefunden.")
-            # else:
-            #     i = 1
-            #     for source in rag.relevant_sources:
-            #         st.write(f"Source{i}: "  + source)
-            #         i = i+1
             if st.session_state.messages[-1]["content"]=="Ich weiß es nicht.":
                 st.write("Keine relevanten Seiten gefunden!")
             else: 

@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from langchain_core.runnables import RunnableParallel, RunnableLambda, RunnablePassthrough
 from operator import itemgetter
 from typing import Literal, Generator 
+from langchain.retrievers.multi_query import MultiQueryRetriever
+from langchain_groq import ChatGroq
         
 # load .env Variablen 
 load_dotenv()
@@ -34,35 +36,17 @@ def initialize_chain():
         
         ANWEISUNG: 
         Beantworte die FRAGE basierend auf dem gegebenen KONTEXT.  
-        Wenn KONTEXT leer ist, anworte mit "Ich weiß es nicht".
         Wenn das Beantworten der FRAGE nicht möglich ist durch den gegebenen KONTEXT, antworte immer "Ich weiß es nicht".
         
         """
 
-    rag_prompt = ChatPromptTemplate.from_messages([
-        ("system", rag_template),
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{input}"),
-        ]) 
-    
-    # rewrite query given the chat_history
-    rewriting_template = """
-        FRAGE: {input}
-        
-        KONTEXT: {chat_history}
-        
-        ANWEISUNG: 
-        Ergänze FRAGE mit Informationen aus KONTEXT, wenn diese relevant zur FRAGE sind. Gib nur die transformierte FRAGE aus.
-        """
-
-    rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "chat_history"), 
-                                                    ("user", rewriting_template)
-                                                    ])       
+    rag_prompt = ChatPromptTemplate.from_template(rag_template)
 
     # inistialize specific model with api key and temperature    
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
-
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+    model1 = ChatGroq(temperature=0,groq_api_key=GROQ_API_KEY, model_name="llama3")
     # parses AIMessage to string
     parser = StrOutputParser() 
 
@@ -72,14 +56,20 @@ def initialize_chain():
     # initialize vectorstore
     index_pinecone = "llm-km"
     vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embeddings)
+    retriever = vectorstore.as_retriever()
 
-    # hyperparameters for retriever 
-    MAX_NUMBER_OF_RESULTS = 10
-    THRESHHOLD_SIMILARITY = 0.9
+    multi_prompt = ChatPromptTemplate.from_template(
+        template="""Sie sind ein KI-Sprachmodellassistent. Ihre Aufgabe besteht darin, fünf verschiedene Versionen der gegebenen Benutzerfrage zu generieren, 
+        um relevante Dokumente aus einer Vektordatenbank abzurufen. Durch die Generierung mehrerer Perspektiven auf die Benutzerfrage besteht Ihr Ziel darin, 
+        dem Benutzer dabei zu helfen, einige der Einschränkungen der distanzbasierten Ähnlichkeitssuche zu überwinden. Stellen Sie diese alternativen Fragen 
+        durch Zeilenumbrüche getrennt bereit. 
+        Ursprüngliche Frage: {input}""")
+    
+    llm = ChatOpenAI(temperature=0)
 
-    # specifiy vectorstore and parameters for retriever 
-    retriever = vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
-
+    # Chain
+    generate_queries = multi_prompt | model | parser | (lambda x: x.split("\n"))
+    
     # 2 functions for chaining:
     # compose page content of Documents to one string
     def format_docs(docs):
@@ -87,24 +77,22 @@ def initialize_chain():
         relevant_docs = docs
         return "\n\n".join([d.page_content for d in docs])
 
-    # only rewrite if there is a chat history
-    def route(info):
-        if len(info["chat_history"])!=0:
-            return rewriting
-        else:
-            return no_rewriting
+    from langchain.load import dumps, loads
 
-    # RunnableParallel so all value "chains" of the dictionary get parallel excecuted, itemgetter to get the values of keys from the input dictionary
-    retrieval = RunnableParallel({"context": itemgetter("input") | retriever | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
-
-    # rewrite the query given the chat history
-    rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_history": itemgetter("chat_history")})
-
-    # do nothing and pass on the entire dictionary 
-    no_rewriting = RunnablePassthrough()
-
+    def get_unique_union(documents: list[list]):
+        """ Unique union of retrieved docs """
+        # Flatten list of lists, and convert each Document to string
+        flattened_docs = [dumps(doc) for sublist in documents for doc in sublist]
+        # Get unique documents
+        unique_docs = list(set(flattened_docs))
+        # Return
+        return [loads(doc) for doc in unique_docs]
+    
+    retrieval_chain = generate_queries | retriever.map() | get_unique_union | format_docs
+    
     # rag chain that gets invoked when you generate a response
-    rag_chain = route | retrieval | rag_prompt | model | parser
+    rag_chain = {"context": retrieval_chain, "input": itemgetter("input")}  | rag_prompt | model | parser
+    
     return rag_chain
 
 
@@ -168,27 +156,3 @@ if __name__ == "__main__":
         for chunk in response:
             print(chunk, end="", flush=True)
         print("")
-
-
-
-
-
-
-
-# Chroma DB
-#CHROMA_PATH = "chroma"
-
-
-# def get_chunks_from_chroma(message):
-#     # Prepare the DB.
-#     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-
-#     # Search the DB for relevant chunks for answering the question
-#     results = db.similarity_search_with_relevance_scores(message, k=MAX_NUMBER_OF_RESULTS)
-    
-#     # Filter relevant chunks to only the chunks with a simalarity greater than treshhold 
-#     filtered_results = [(doc, score) for doc, score in results if score >= THRESHHOLD_SIMILARITY]
-
-#     return filtered_results
-
-         

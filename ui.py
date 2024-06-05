@@ -52,7 +52,7 @@ if True: #st.session_state["authentication_status"]:
             st.write("Wissen wird auf Pinecone hochgeladen...")
             # delete all existing vectors in pinecone vectorstore
             delete_vecs_pinecone()
-            #upsert_data_to_pinecone()
+            upsert_data_to_pinecone()
             st.write("Knowledge Base geupdated!")
 
     # clear button clears all messages

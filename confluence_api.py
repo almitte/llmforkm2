@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from atlassian import Confluence
 from bs4 import BeautifulSoup
 import json
+from datetime import datetime
     
 # loop for getting all pages, because Confluence package has maximum of 100 pages that it returns
 def get_all_pages(confluence: Confluence, space_key: str, start: int = 0, limit: int = 100) -> list[dict]:
@@ -57,15 +58,30 @@ def get_data_confluence():
         # remove html stuff 
         soup = BeautifulSoup(body, 'html.parser')
         text = soup.get_text(separator="")
-        # append list with new page entry
-        page = {"text": text, "p_id": page_api["id"], "p_title": page_api["title"], "p_parent": "not implemented", "last_edited": "not implemented"}
+
+        # Get Page properties
+        p_id = page_api["id"]
+        p_properties = confluence.get_page_properties(page_id = p_id)      
+     
+        # Last Edited
+        last_edited = p_properties['results'][0]['version']['when']
+        dt = datetime.strptime(last_edited, '%Y-%m-%dT%H:%M:%S.%fZ')
+        formatted_timestamp = dt.strftime('%d.%m.%Y (%H:%M)')
+
+        # Get parent id
+        parents = confluence.get_page_ancestors(p_id)
+        if parents:      
+            parent_p_id = parents[0]['id']
+        else:
+            parent_p_id = None
+    
+        page = {"text": text, "p_id": page_api["id"], "p_title": page_api["title"], "p_parent": parent_p_id, "last_edited": formatted_timestamp}
         pages["pages"].append(page)
     
     # store as json file     
     file_path = "Data/confluence_data.json"
     with open(file_path, 'w', encoding='utf-8') as file:
         json.dump(pages, file, indent=4)
-        
         
 # get json file
 if __name__ == "__main__":

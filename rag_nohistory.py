@@ -139,9 +139,6 @@ def send_feedback(run_id: str, score: Literal[0,1]):
     key = f"user_score_{run_id}"
     client.create_feedback(run_id, key=key, score=score)
 
-
-
-
 # for debugging purposes
 if __name__ == "__main__":
     chat_history = []

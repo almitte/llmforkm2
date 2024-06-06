@@ -33,8 +33,8 @@ def initialize_chain():
         KONTEXT: {context}
         
         ANWEISUNG: 
-        Beantworte die FRAGE basierend auf dem gegebenen KONTEXT.  
-        Wenn KONTEXT leer ist, anworte mit "Ich weiß es nicht".
+        Beantworte die FRAGE basierend auf dem gegebenen KONTEXT. 
+        Wenn KONTEXT leer ist, anworte mit "Ich weiß es nicht". 
         Wenn das Beantworten der FRAGE nicht möglich ist durch den gegebenen KONTEXT, antworte immer "Ich weiß es nicht".
         
         """
@@ -42,22 +42,22 @@ def initialize_chain():
     rag_prompt = ChatPromptTemplate.from_messages([
         ("system", rag_template),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{input}"),
+        ("human", "{input}")
         ]) 
     
     # rewrite query given the chat_history
     rewriting_template = """
-        FRAGE: {input}
-        
-        KONTEXT: {chat_history}
-        
-        ANWEISUNG: 
-        Ergänze FRAGE mit Informationen aus KONTEXT, wenn diese relevant zur FRAGE sind. Gib nur die transformierte FRAGE aus.
+        Angesichts des gegebenen Chatverlaufs und der neuesten Benutzerfrage 
+        die auf den Kontext im Chatverlauf verweisen könnte, formulieren Sie eine eigenständige Frage 
+        was auch ohne den Chatverlauf nachvollziehbar ist. Beantworten Sie die Frage NICHT, 
+        Formulieren Sie es bei Bedarf einfach um und geben Sie es ansonsten so zurück, wie es ist.
         """
 
-    rewriting_prompt = ChatPromptTemplate.from_messages([MessagesPlaceholder(variable_name = "chat_history"), 
-                                                    ("user", rewriting_template)
-                                                    ])       
+    rewriting_prompt = ChatPromptTemplate.from_messages([
+        ("system", rewriting_template),
+        MessagesPlaceholder(variable_name = "chat_history"), 
+        ("human", "{input}")
+        ])       
 
     # inistialize specific model with api key and temperature    
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -164,10 +164,12 @@ if __name__ == "__main__":
             break
         response = generate_response(user_input, chat_history, stream=True)
         chat_history.append({"role": "user", "content": user_input})
-        chat_history.append({"role": "assistant", "content": response})
+        response_string = ""
         for chunk in response:
             print(chunk, end="", flush=True)
+            response_string += chunk
         print("")
+        chat_history.append({"role": "assistant", "content": response_string})
 
 
 

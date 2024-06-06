@@ -66,14 +66,14 @@ def get_data_confluence():
         # Last Edited
         last_edited = p_properties['results'][0]['version']['when']
         dt = datetime.strptime(last_edited, '%Y-%m-%dT%H:%M:%S.%fZ')
-        formatted_timestamp = dt.strftime('%d.%m.%Y (%H:%M)')
-
+        formatted_timestamp = str(dt.strftime('%d.%m.%Y (%H:%M)'))
+        type(formatted_timestamp)
         # Get parent id
         parents = confluence.get_page_ancestors(p_id)
         if parents:      
             parent_p_id = parents[0]['id']
         else:
-            parent_p_id = None
+            parent_p_id = "no parent"
     
         page = {"text": text, "p_id": page_api["id"], "p_title": page_api["title"], "p_parent": parent_p_id, "last_edited": formatted_timestamp}
         pages["pages"].append(page)

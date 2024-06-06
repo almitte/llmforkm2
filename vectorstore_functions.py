@@ -29,6 +29,7 @@ def upsert_data_to_pinecone():
     documents = load_documents(file=path)
     # split text from convert_documents
     knowledge_chunks =  split_text(documents)
+    
     # load new chunks to pinecone vectorstore,
     PineconeVectorStore.from_documents(knowledge_chunks, OpenAIEmbeddings(), index_name="llm-km")
         

@@ -62,7 +62,7 @@ def initialize_chain():
     # inistialize specific model with api key and temperature    
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
-
+  
     # parses AIMessage to string
     parser = StrOutputParser() 
 
@@ -85,7 +85,7 @@ def initialize_chain():
     def format_docs(docs):
         global relevant_docs
         relevant_docs = docs
-        return "\n\n".join([d.page_content for d in docs])
+        return "\n\n".join(["Titel: " + d.metadata["p_title"] + " (Zuletzt Geändert: " +  d.metadata["last_edited"] +")" + "\n" + d.page_content for d in docs])
 
     # only rewrite if there is a chat history
     def route(info):

@@ -16,7 +16,7 @@ def extract_metadata(record: dict, metadata: dict) -> dict:
     metadata["p_title"] = record.get("p_title")
     metadata["p_id"] = record.get("p_id")
     metadata["p_parent"] = record.get("p_parent")
-    metadata["last_edited"] = ["last_edited"]
+    metadata["last_edited"] = record.get("last_edited")
 
     return metadata  
   
@@ -26,7 +26,6 @@ def load_documents(file):
     Loading documents from json file from data path and returning documents    
     
     """
-
     loader=JSONLoader(file,
                       jq_schema='.pages[]',
                       content_key="text",

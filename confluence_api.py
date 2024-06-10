@@ -75,7 +75,7 @@ def get_data_confluence():
         else:
             parent_p_id = "no parent"
     
-        page = {"text": text, "p_id": page_api["id"], "p_title": page_api["title"], "p_parent": parent_p_id, "last_edited": formatted_timestamp}
+        page = {"text": text, "p_id": page_api["id"], "p_title": page_api["title"], "p_parent": parent_p_id, "last_edited": formatted_timestamp, "sentence_window":"placeholder"}
         pages["pages"].append(page)
     
     # store as json file     

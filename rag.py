@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from langchain_core.runnables import RunnableParallel, RunnableLambda, RunnablePassthrough
 from operator import itemgetter
 from typing import Literal, Generator 
+import json
+from langchain.schema import Document
         
 # load .env Variablen 
 load_dotenv()
@@ -61,7 +63,7 @@ def initialize_chain():
 
     # inistialize specific model with api key and temperature    
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    model = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
+    model = ChatOpenAI(openai_api_key = OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
   
     # parses AIMessage to string
     parser = StrOutputParser() 
@@ -70,32 +72,49 @@ def initialize_chain():
     embeddings = OpenAIEmbeddings()
 
     # initialize vectorstore
-    index_pinecone = "llm-km"
-    vectorstore = PineconeVectorStore(index_name=index_pinecone, embedding=embeddings)
-
+    index_pinecone_sm = "llm-km-sm"
+    vectorstore_sm = PineconeVectorStore(index_name=index_pinecone_sm, embedding=embeddings)
+    
     # hyperparameters for retriever 
     MAX_NUMBER_OF_RESULTS = 10
     THRESHHOLD_SIMILARITY = 0.9
 
     # specifiy vectorstore and parameters for retriever 
-    retriever = vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
+    retriever = vectorstore_sm.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
+    # retriever = vectorstore_sm.as_retriever(search_kwargs={"k": MAX_NUMBER_OF_RESULTS})
 
     # 2 functions for chaining:
     # compose page content of Documents to one string
     def format_docs(docs):
         global relevant_docs
         relevant_docs = docs
-        return "\n\n".join(["Titel: " + d.metadata["p_title"] + " (Zuletzt Geändert: " +  d.metadata["last_edited"] +")" + "\n" + d.page_content for d in docs])
+        return "\n\n".join([d.page_content for d in docs])#"Titel: " + d.metadata["p_title"] + " (Zuletzt Geändert: " +  d.metadata["last_edited"] +")" + "\n" + d.page_content for d in docs])
 
     # only rewrite if there is a chat history
-    def route(info):
-        if len(info["chat_history"])!=0:
+    def route_rewriting(dic):
+        if len(dic["chat_history"])!=0:
             return rewriting
         else:
             return no_rewriting
-
+    
+    # returns the bigger an index to the corresponding bigger chunk of smaller chunk
+    def get_window_index(docs):
+        return set([doc.metadata["sentence_window"] for doc in docs])
+    
+    def get_docs(indexes):
+        with open('Data/index_windows.json') as f:
+            index2chunk = json.load(f)
+            
+            def search(i):
+                value = None
+                for item in index2chunk:
+                    if i in item:
+                        return Document(item[i])
+                    
+            return [search(index) for index in indexes]
+    
     # RunnableParallel so all value "chains" of the dictionary get parallel excecuted, itemgetter to get the values of keys from the input dictionary
-    retrieval = RunnableParallel({"context": itemgetter("input") | retriever | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
+    retrieval = RunnableParallel({"context": itemgetter("input") | retriever | RunnableLambda(get_window_index) |  RunnableLambda(get_docs) | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
 
     # rewrite the query given the chat history
     rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_history": itemgetter("chat_history")})
@@ -104,7 +123,7 @@ def initialize_chain():
     no_rewriting = RunnablePassthrough()
 
     # rag chain that gets invoked when you generate a response
-    rag_chain = route | retrieval | rag_prompt | model | parser
+    rag_chain = route_rewriting | retrieval | rag_prompt | model | parser
     return rag_chain
 
 

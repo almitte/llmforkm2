@@ -45,4 +45,5 @@ def upsert_data_to_pinecone():
     sentence_window_json(knowledge_chunks_lg)  
     # load new chunks to pinecone vectorstore,
     PineconeVectorStore.from_documents(knowledge_chunks_sm, OpenAIEmbeddings(), index_name="llm-km-sm")
+    PineconeVectorStore.from_documents(knowledge_chunks_lg, OpenAIEmbeddings(), index_name="llm-km")
         

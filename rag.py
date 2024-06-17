@@ -27,68 +27,117 @@ os.environ["LANGCHAIN_ENDPOINT"] = "https://api.smith.langchain.com"
 os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY")
 client = Client()
 
-def initialize_chain():
-    # template to control for hallucination and contradictions
-    rag_template = """
-        FRAGE: {input} 
-        
-        KONTEXT: {context}
-        
-        ANWEISUNG: 
-        Beantworte die FRAGE basierend auf dem gegebenen KONTEXT. 
-        Wenn KONTEXT leer ist, anworte mit "Ich weiß es nicht". 
-        Wenn das Beantworten der FRAGE nicht möglich ist durch den gegebenen KONTEXT, antworte immer "Ich weiß es nicht".
-        
-        """
-
-    rag_prompt = ChatPromptTemplate.from_messages([
-        ("system", rag_template),
-        MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{input}")
-        ]) 
+# template to control for hallucination and contradictions
+rag_template = """
+    FRAGE: {input} 
     
-    # rewrite query given the chat_history
-    rewriting_template = """
-        Angesichts des gegebenen Chatverlaufs und der neuesten Benutzerfrage 
-        die auf den Kontext im Chatverlauf verweisen könnte, formulieren Sie eine eigenständige Frage 
-        was auch ohne den Chatverlauf nachvollziehbar ist. Beantworten Sie die Frage NICHT, 
-        Formulieren Sie es bei Bedarf einfach um und geben Sie es ansonsten so zurück, wie es ist.
-        """
-
-    rewriting_prompt = ChatPromptTemplate.from_messages([
-        ("system", rewriting_template),
-        MessagesPlaceholder(variable_name = "chat_history"), 
-        ("human", "{input}")
-        ])       
-
-    # inistialize specific model with api key and temperature    
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    model = ChatOpenAI(openai_api_key = OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
-  
-    # parses AIMessage to string
-    parser = StrOutputParser() 
-
-    # for embedding of chunks 
-    embeddings = OpenAIEmbeddings()
-
-    # initialize vectorstore
-    index_pinecone_sm = "llm-km-sm"
-    vectorstore_sm = PineconeVectorStore(index_name=index_pinecone_sm, embedding=embeddings)
+    KONTEXT: {context}
     
-    # hyperparameters for retriever 
-    MAX_NUMBER_OF_RESULTS = 10
-    THRESHHOLD_SIMILARITY = 0.9
+    ANWEISUNG: 
+    Beantworte die FRAGE basierend auf dem gegebenen KONTEXT. 
+    Wenn KONTEXT leer ist, anworte mit "Ich weiß es nicht". 
+    Wenn das Beantworten der FRAGE nicht möglich ist durch den gegebenen KONTEXT, antworte immer "Ich weiß es nicht".
+    
+    """
 
-    # specifiy vectorstore and parameters for retriever 
-    retriever = vectorstore_sm.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
-    # retriever = vectorstore_sm.as_retriever(search_kwargs={"k": MAX_NUMBER_OF_RESULTS})
+rag_prompt = ChatPromptTemplate.from_messages([
+    ("system", rag_template),
+    MessagesPlaceholder(variable_name="chat_history"),
+    ("human", "{input}")
+    ]) 
 
-    # 2 functions for chaining:
-    # compose page content of Documents to one string
+# rewrite query given the chat_history
+rewriting_template = """
+    Angesichts des gegebenen Chatverlaufs und der neuesten Benutzerfrage 
+    die auf den Kontext im Chatverlauf verweisen könnte, formulieren Sie eine eigenständige Frage 
+    was auch ohne den Chatverlauf nachvollziehbar ist. Beantworten Sie die Frage NICHT, 
+    Formulieren Sie es bei Bedarf einfach um und geben Sie es ansonsten so zurück, wie es ist.
+    """
+
+rewriting_prompt = ChatPromptTemplate.from_messages([
+    ("system", rewriting_template),
+    MessagesPlaceholder(variable_name = "chat_history"), 
+    ("human", "{input}")
+    ])       
+
+# inistialize specific model with api key and temperature    
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+model = ChatOpenAI(openai_api_key = OPENAI_API_KEY, model="gpt-3.5-turbo", temperature=0)
+
+# parses AIMessage to string
+parser = StrOutputParser() 
+
+# for embedding of chunks 
+embeddings = OpenAIEmbeddings()
+
+# initialize vectorstores, large for basic and chat history chain and small one for sentence window
+index_pinecone_sm = "llm-km-sm"
+vectorstore_sm = PineconeVectorStore(index_name=index_pinecone_sm, embedding=embeddings)
+index_pinecone_lg = "llm-km"
+vectorstore_lg = PineconeVectorStore(index_name=index_pinecone_lg, embedding=embeddings)
+    
+# hyperparameters for retriever 
+MAX_NUMBER_OF_RESULTS = 10
+THRESHHOLD_SIMILARITY = 0.9
+
+# specifiy vectorstore and parameters for retriever 
+retriever_sm = vectorstore_sm.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
+retriever_lg = vectorstore_lg.as_retriever(search_type="similarity_score_threshold", search_kwargs={"k": MAX_NUMBER_OF_RESULTS, "score_threshold": THRESHHOLD_SIMILARITY})
+
+
+
+def get_basic_chain():
+    
     def format_docs(docs):
         global relevant_docs
         relevant_docs = docs
-        return "\n\n".join([d.page_content for d in docs])#"Titel: " + d.metadata["p_title"] + " (Zuletzt Geändert: " +  d.metadata["last_edited"] +")" + "\n" + d.page_content for d in docs])
+        return "\n\n".join([d.page_content for d in docs])
+    
+    rag_prompt_no_history = ChatPromptTemplate.from_messages([
+        ("system", rag_template),
+        ("human", "{input}")
+        ]) 
+    
+    chain = {"context": retriever_lg | format_docs, "input": RunnablePassthrough()} | rag_prompt_no_history | model | parser 
+    return chain
+
+
+
+
+def get_history_chain():
+    
+    def format_docs(docs):
+        global relevant_docs
+        relevant_docs = docs
+        return "\n\n".join([d.page_content for d in docs])
+    
+    # only rewrite if there is a chat history
+    def route_rewriting(dic):
+        if len(dic["chat_history"])!=0:
+            return rewriting
+        else:
+            return no_rewriting
+    
+     # rewrite the query given the chat history
+    rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_history": itemgetter("chat_history")})
+
+    # do nothing and pass on the entire dictionary 
+    no_rewriting = RunnablePassthrough()
+    
+     # RunnableParallel so all value "chains" of the dictionary get parallel excecuted, itemgetter to get the values of keys from the input dictionary
+    retrieval = RunnableParallel({"context": itemgetter("input") | retriever_lg | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
+    
+    # rag chain that gets invoked when you generate a response
+    chain = route_rewriting | retrieval | rag_prompt | model | parser
+    
+    
+    return chain 
+
+def get_sentence_window_chain():
+    # 2 functions for chaining:
+    # compose page content of Documents to one string
+    def format_docs(docs):
+        return "\n\n".join([d.page_content for d in docs]) #"Titel: " + d.metadata["p_title"] + " (Zuletzt Geändert: " +  d.metadata["last_edited"] +")" + "\n" + d.page_content for d in docs])
 
     # only rewrite if there is a chat history
     def route_rewriting(dic):
@@ -99,6 +148,8 @@ def initialize_chain():
     
     # returns the bigger an index to the corresponding bigger chunk of smaller chunk
     def get_window_index(docs):
+        global relevant_docs
+        relevant_docs = docs
         return set([doc.metadata["sentence_window"] for doc in docs])
     
     def get_docs(indexes):
@@ -114,7 +165,7 @@ def initialize_chain():
             return [search(index) for index in indexes]
     
     # RunnableParallel so all value "chains" of the dictionary get parallel excecuted, itemgetter to get the values of keys from the input dictionary
-    retrieval = RunnableParallel({"context": itemgetter("input") | retriever | RunnableLambda(get_window_index) |  RunnableLambda(get_docs) | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
+    retrieval = RunnableParallel({"context": itemgetter("input") | retriever_sm | RunnableLambda(get_window_index) |  RunnableLambda(get_docs) | format_docs, "input": itemgetter("input"), "chat_history": itemgetter("chat_history")})
 
     # rewrite the query given the chat history
     rewriting = RunnableParallel({"input": rewriting_prompt | model | parser, "chat_history": itemgetter("chat_history")})
@@ -123,29 +174,36 @@ def initialize_chain():
     no_rewriting = RunnablePassthrough()
 
     # rag chain that gets invoked when you generate a response
-    rag_chain = route_rewriting | retrieval | rag_prompt | model | parser
-    return rag_chain
+    chain = route_rewriting | retrieval | rag_prompt | model | parser
+    return chain
 
 
-def generate_response(message: str, history_list: list[dict], stream: bool = True) -> str | Generator[str, None, None]:
+def generate_response(message: str, history_list: list[dict], chain: Literal["basic","history", "window"]) -> Generator[str, None, None]:
     chat_history =[]
     # transform the chat history to langchain chat_history list
     # wrapping messages with Human and AIMessage
     for mes in history_list:
         m = HumanMessage(content=mes["content"]) if mes["role"] == "user" else AIMessage(content=mes["content"])
         chat_history.append(m)   
-    chain = initialize_chain()     
-    # option to choose streaming or getting the entire response at once
-    if stream:
-        response = chain.stream({
+        
+    if chain == "basic": 
+        rag_chain = get_basic_chain()
+        response = rag_chain.stream(message)
+    elif chain == "history": 
+        rag_chain = get_history_chain()
+        response = rag_chain.stream({
             "chat_history": chat_history, 
             "input": message
             })
-    else: 
-        response = chain.invoke({
+    elif chain == "window": 
+        rag_chain = get_sentence_window_chain()
+        response = rag_chain.stream({
             "chat_history": chat_history, 
             "input": message
-            })       
+            })
+    else: response = None
+    
+       
     return response
      
 
@@ -181,7 +239,7 @@ if __name__ == "__main__":
         user_input = input("You: ")
         if user_input.lower() == 'exit':
             break
-        response = generate_response(user_input, chat_history, stream=True)
+        response = generate_response(user_input, chat_history, "window")
         chat_history.append({"role": "user", "content": user_input})
         response_string = ""
         for chunk in response:
@@ -191,25 +249,3 @@ if __name__ == "__main__":
         chat_history.append({"role": "assistant", "content": response_string})
 
 
-
-
-
-
-
-# Chroma DB
-#CHROMA_PATH = "chroma"
-
-
-# def get_chunks_from_chroma(message):
-#     # Prepare the DB.
-#     db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-
-#     # Search the DB for relevant chunks for answering the question
-#     results = db.similarity_search_with_relevance_scores(message, k=MAX_NUMBER_OF_RESULTS)
-    
-#     # Filter relevant chunks to only the chunks with a simalarity greater than treshhold 
-#     filtered_results = [(doc, score) for doc, score in results if score >= THRESHHOLD_SIMILARITY]
-
-#     return filtered_results
-
-         

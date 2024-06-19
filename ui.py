@@ -4,21 +4,28 @@ import rag
 from confluence_api import get_data_confluence
 import yaml
 from vectorstore_functions import delete_vecs_pinecone, upsert_data_to_pinecone
+from streamlit_option_menu import option_menu
 
 # streamlit run interface.py
 
 
 if "impl" not in st.session_state:
-    st.session_state.impl = []
+    st.session_state.impl = ""
 
 with st.sidebar:
-    choice = st.selectbox("Unterstützte Implementierungen", ["Basic", "Chat History", "Sentence Window Retrieval"])
-    if choice == "Basic":
-        st.session_state.impl == "basic"
-    elif choice == "Chat History":
-        st.session_state.impl = "history"
-    elif choice == "Sentence Window Retrieval":
-        st.session_state.impl = "window"
+    selected = option_menu (
+    menu_title = "Art des Retrievels",
+    options = ["Basic", "History", "Sentence to Window", "HyDE", "Consecutive Subquestions", "Individual Subquestions", "Multiquery"]
+    )
+
+    match selected:
+        case "Basic": st.session_state.impl = "basic"
+        case "History": st.session_state.impl = "history"
+        case "Sentence to Window": st.session_state.impl = "window"
+        case "HyDE": st.session_state.impl = "hyde"
+        case "Consecutive Subquestions": st.session_state.impl = "consecutive_subquestions"
+        case "Individual Subquestions": st.session_state.impl = "individual_subquestions"
+        case "Multiquery": st.session_state.impl = "multi"
 
 st.title("Knowledge Management Chat")
 st.write("Unsere Anwendung ermöglicht es dir, Confluence-Seiten in deinem Space automatisch zu extrahieren und dann mithilfe eines Language-Modeling-Modells (LLM) Fragen beantworten zu lassen. Darüber hinaus liefert sie relevante Seiten als Links zurück.")

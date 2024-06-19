@@ -509,13 +509,13 @@ def chain_to_initiate(chain_type: str):
     """
 
     match chain_type:
-        case "basic": return build_basic_chain()
-        case "history": return get_rewriting_chain()
-        case "window": return get_sentence_window_chain()
-        case "individual_subquestions": return get_individual_subquestions_chain()
-        case "consecutive_subquestions": return get_consecutive_subquestions_chain()
-        case "hyde": return get_hyde_chain()
-        case "multi": return get_multiquery_chain()
+        case "basic": return (build_basic_chain())
+        case "history": return (get_rewriting_chain())
+        case "window": return (get_sentence_window_chain())
+        case "individual_subquestions": return (get_individual_subquestions_chain())
+        case "consecutive_subquestions": return (get_consecutive_subquestions_chain())
+        case "hyde": return (get_hyde_chain())
+        case "multi": return (get_multiquery_chain())
 
 def has_chain_history(chain_type):
     """
@@ -530,13 +530,13 @@ def has_chain_history(chain_type):
     """
 
     match chain_type:
-        case "basic": return "basic"
-        case "history": return "history_no_original_question"
-        case "window": return "history_no_original_question"
-        case "individual_subquestions": return "history_with_original_question"
-        case "consecutive_subquestions": return "history_with_original_question"
-        case "hyde": return "history_with_original_question"
-        case "multi": return "history_with_original_question"
+        case "basic": return ("basic")
+        case "history": return ("history_no_original_question")
+        case "window": return ("history_no_original_question")
+        case "individual_subquestions": return ("history_with_original_question")
+        case "consecutive_subquestions": return ("history_with_original_question")
+        case "hyde": return ("history_with_original_question")
+        case "multi": return ("history_with_original_question")
 
 def generate_response(message: str, history_list: list[dict], chain_type: Literal["basic", "history", "window", "hyde", "consecutive_subquestions", "individual_subquestions", "multi"]) -> Generator[str, None, None]:
     """
@@ -553,7 +553,7 @@ def generate_response(message: str, history_list: list[dict], chain_type: Litera
     Generator[str, None, None]: Ein Generator, der die Antwort(en) in Form von Strings liefert.
     
     """ 
-    
+  
     chat_history =[]
     for mes in history_list:
         m = HumanMessage(content=mes["content"]) if mes["role"] == "user" else AIMessage(content=mes["content"])
@@ -562,11 +562,10 @@ def generate_response(message: str, history_list: list[dict], chain_type: Litera
     chain = chain_to_initiate(chain_type)
     history = has_chain_history(chain_type) 
     match history:
-        case "basic": response = chain.stream(message)
-        case "history_no_original_question": response = chain.stream({"chat_history": chat_history, "input": message})
-        case "history_with_original_question": response = chain.stream({"chat_history": chat_history, "input": message, "original_question": message})
-    
-    return response
+        case "basic": return (chain.stream(message))
+        case "history_no_original_question": return (chain.stream({"chat_history": chat_history, "input": message}))
+        case "history_with_original_question": return (chain.stream({"chat_history": chat_history, "input": message, "original_question": message}))
+        case _: return None
 
 def get_relevant_sources() -> list[tuple[str, str]]:
     confluence_spacekey=os.getenv("LANGCHAIN_API_KEY")

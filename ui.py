@@ -6,7 +6,7 @@ import yaml
 from vectorstore_functions import delete_vecs_pinecone, upsert_data_to_pinecone
 from streamlit_option_menu import option_menu
 
-# streamlit run interface.py
+# streamlit run ui.py
 
 
 if "impl" not in st.session_state:

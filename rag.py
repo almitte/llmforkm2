@@ -189,10 +189,10 @@ def get_rewriting_chain():
     rag_prompt = ChatPromptTemplate.from_messages([("system", rag_template),MessagesPlaceholder(variable_name="chat_history"),("human", "{input}")]) 
 
     rewriting_template = """
-        Angesichts des gegebenen Chatverlaufs und der neuesten Benutzerfrage 
-        die auf den Kontext im Chatverlauf verweisen könnte, formulieren Sie eine eigenständige Frage 
-        was auch ohne den Chatverlauf nachvollziehbar ist. Beantworten Sie die Frage NICHT, 
-        Formulieren Sie es bei Bedarf einfach um und geben Sie es ansonsten so zurück, wie es ist.
+        Sie sind ein weltweit anerkannter KI-Sprachmodell-Assistent. Ihre Aufgabe ist es, angesichts des gegebenen Chatverlaufs 
+        und der neuesten Benutzerfrage die auf den Kontext im Chatverlauf verweisen könnte, eine eigenständige Frage 
+        die auch ohne den Chatverlauf nachvollziehbar ist, zu formulieren. Beantworten Sie die Frage NICHT. 
+        Formulieren Sie die Frage bei Bedarf um oder geben Sie die Frage ansonsten ohne Änderungen zurück.
         """
     rewriting_prompt = ChatPromptTemplate.from_messages([("system", rewriting_template),MessagesPlaceholder(variable_name = "chat_history"),("human", "{input}")])
 
@@ -272,8 +272,8 @@ def get_individual_subquestions_chain():
 
     ### Prerequisites
     subquestion_template = """
-    Sie sind ein KI-Sprachmodell-Assistent. Ihre Aufgabe ist es, die Ausgangsfrage zu analysieren und die einzelnen Teilfragen/Teilprobleme zurückzugeben,\n 
-    um relevante Dokumente aus einer Vektordatenbank zu finden. Geben Sie diese Teilfragen Fragen durch Zeilenumbrüche getrennt ein.\n
+    Sie sind ein weltweit anerkannter KI-Sprachmodell-Assistent. Ihre Aufgabe ist es, die Ausgangsfrage zu analysieren und die einzelnen Teilfragen/Teilprobleme zurückzugeben,\n 
+    um relevante Dokumente aus einer Vektordatenbank zu finden. Geben Sie diese Teilfragen durch Zeilenumbrüche getrennt an.\n
     Ausgangsfrage: {question} 
     """
     subquestion_prompt = PromptTemplate.from_template(subquestion_template)
@@ -404,8 +404,8 @@ def get_hyde_chain():
 
     ### Prerequisites
     hyde_template = """
-    Bitte schreib ein Confluence Wissensbasis Eintrag, um die Nutzer Frage zu beantworten 
-    Frage: {input}"""
+    Sie sind ein weltweit anerkannter KI-Sprachmodell-Assistent. Ihre Aufgabe ist es, einen prägnanten Confluence Wissensbasis Eintrag zu schreiben, um die Nutzeranfrage zu beantworten. 
+    Nutzeranfrage: {input}"""
     hyde_prompt = ChatPromptTemplate.from_template(hyde_template)
 
     rag_template = """
@@ -457,7 +457,7 @@ def get_multiquery_chain():
 
     ### Prerequisites
     multiquery_template = """
-    Sie sind ein KI-Sprachmodell-Assistent. Ihre Aufgabe ist es, fünf verschiedene 
+    Sie sind ein weltweit anerkannter KI-Sprachmodell-Assistent. Ihre Aufgabe ist es, fünf verschiedene 
     verschiedene Versionen der gegebenen Benutzerfrage zu generieren, um relevante Dokumente aus einer Vektordatenbank 
     Datenbank zu finden. Indem Sie mehrere Perspektiven auf die Frage des Benutzers erzeugen, wollen Sie dem Benutzer helfen
     Ziel ist es, dem Benutzer zu helfen, einige der Einschränkungen der entfernungsbasierten Ähnlichkeitssuche zu überwinden. 
@@ -496,7 +496,7 @@ def get_multiquery_chain():
 
     return chain
 
-def chain_to_initiate(chain_type: str):
+def chain_to_initiate(chain_type: str, message: str):
     """
     Erstellt die entsprechende Chain basierend auf der Nuterauswahl
 
@@ -513,7 +513,7 @@ def chain_to_initiate(chain_type: str):
         case "history": return (get_rewriting_chain())
         case "window": return (get_sentence_window_chain())
         case "individual_subquestions": return (get_individual_subquestions_chain())
-        case "consecutive_subquestions": return (get_consecutive_subquestions_chain())
+        case "consecutive_subquestions": return (get_consecutive_subquestions_chain(message))
         case "hyde": return (get_hyde_chain())
         case "multi": return (get_multiquery_chain())
 
